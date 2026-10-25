@@ -3,7 +3,7 @@ from math import sqrt
 
 # La matriz asociada para un n es la matriz que representa qué valores son
 # afectadas para un dado i que es presionado. Es calculada revisando qué celdas
-# son adyacentes a la celda actual, y generand la matriz.
+# son adyacentes a la celda actual, y generando la matriz.
 def associated_matrix_for_size(n: int):
     res: list[list[int]] = []
     for i in range(0, n**2):
@@ -29,71 +29,67 @@ def associated_matrix(mat: list[list[int]]):
 # operaciones sobre los valores de la matriz asumen que estamos trabajando en
 # Z_2.
 def gauss(mat: list[list[int]], b: list[int]):
-    def swap_mat_rows(mat: list[list[int]], row1: int, row2: int):
-        n = len(mat)
-        for i in range(0, n):
-            (mat[row1][i], mat[row2][i]) = (mat[row2][i], mat[row1][i])
+    def swap_mat_rows(mat, row1: int, row2: int):
+        mat[row1], mat[row2] = mat[row2], mat[row1]
 
     n = len(mat)
     assert len(b) == n
-    for l in mat:
-        for i in l:
-            i = i % 2
+    assert all(len(row) == n for row in mat)
 
-    res = b.copy()
+    # Trabajamos en Z_2, por lo que todos los valores deben ser 0 o 1.
+    for i in range(n):
+        mat[i] = [value % 2 for value in mat[i]]
+
+    res = [value % 2 for value in b]
+    pivot_cols: list[int] = []
     h = 0
     k = 0
 
-    # Algoritmo de eliminación de gauss. Tomamos a la matriz aumentada [A|b],
+    # Algoritmo de eliminación de Gauss. Tomamos a la matriz aumentada [A|b],
     # y realizamos escalonización en A, replicando las operaciones elementales
-    # de fila en los valores de b
+    # de fila en los valores de b.
     while h < n and k < n:
-        i_max = h
-        # 1: Necesito encontrar la primera fila que tenga un 1 en la columna k
-        for i in range(h + 1, n):
-            if mat[i][k] > mat[i_max][k]: i_max = i
+        i_max = next((i for i in range(h, n) if mat[i][k] == 1), None)
 
         # 1.1: Si no tengo un 1 en la columna k, quiere decir que no tiene
         # pivote. Puedo pasar a la próxima columna.
-        if mat[i_max][k] == 0:
+        if i_max is None:
             k += 1
             continue
 
         # 2: Si hay una fila con valor 1, la intercambio con la fila h. Por
-        # construcción, la fila h-1 tiene su entrada principal en una columna
-        # anterior a k, y ahora la fila h tiene su entrada principal en la
-        # columna k.
+        # construcción, las filas anteriores ya tienen sus pivotes en columnas
+        # anteriores, y ahora la fila h tiene su entrada principal en la columna k.
         swap_mat_rows(mat, h, i_max)
-        (res[h], res[i_max]) = (res[i_max],res[h])
+        res[h], res[i_max] = res[i_max], res[h]
 
-        # 3: Reduzco a 0 el resto de los elementos de esta columna que están
-        # debajo de la fila h. Para hacerlo, realizo la operación elemental
-        # F_i <- F_i + F_h. Después de esto, en las filas posteriores a h
-        # la entrada principal va a estar en una columna posterior a k.
-        for i in range(h + 1, n):
-            f = mat[i][k] // mat[h][k]
-            mat[i][k] = 0
-            for j in range(k + 1, n):
-                mat[i][j] = (mat[i][j] + mat[h][j] * f) % 2
-            res[i] = (res[i] + res[h] * f) % 2
+        # 3: Reduzco a 0 el resto de los elementos de esta columna.
+        # En Z_2, sumar la fila del pivote a una fila con un 1 en esta columna
+        # elimina ese 1. También se replica la operación en el vector b.
+        for i in range(n):
+            if i != h and mat[i][k] == 1:
+                for j in range(n):
+                    mat[i][j] = (mat[i][j] + mat[h][j]) % 2
+                res[i] = (res[i] + res[h]) % 2
+
+        pivot_cols.append(k)
         h += 1
         k += 1
 
-    # Después de escalonizar la matriz, puede pasarla a la forma reducida. Esto
-    # permite que el b final represente el valor exacto de la solución, en caso
-    # de que todas las columnas tengan pivote.
-    for i in reversed(range(0, n)):
-        if mat[i][i] == 0: continue
+    # Después de escalonizar la matriz, la llevamos a forma escalonada reducida.
+    # Esto permite identificar las variables pivote y detectar sistemas incompatibles.
+    for i in range(n):
+        if all(value == 0 for value in mat[i]) and res[i] == 1:
+            return None
 
-        # F_j <- F_j + F_i
-        for j in range(0, i):
-            if mat[j][i] == 0: continue
+    # Si el sistema es indeterminado (hay variables libres), las fijamos en 0.
+    # Como la matriz está en forma escalonada reducida, cada variable pivote
+    # toma el valor del término independiente de su fila.
+    solution = [0] * n
+    for row, col in enumerate(pivot_cols):
+        solution[col] = res[row]
 
-            for k in range(0, n):
-                mat[j][k] = (mat[j][k] + mat[i][k]) % 2
-            res[j] = (res[j] + res[i]) % 2
-
-    return res
+    return solution
 
 # Para resolver el tablero de juego, se necesita resolver el sistema matricial
 # [A|b], donde A es la matriz asociada al valor n, y b es la representación
@@ -105,26 +101,12 @@ def gauss(mat: list[list[int]], b: list[int]):
 # esta función fija a los valores libres en 0 y genera la solución resultante.
 def solve(mat: list[list[int]]):
     mat1 = associated_matrix(mat)
-    b=list(itertools.chain.from_iterable(mat))
+    b = list(itertools.chain.from_iterable(mat))
     res = gauss(mat1, b)
 
-    indet_idx = -1
-    for i in reversed(range(len(mat1))):
-        # Como la matriz es cuadrada, y la matriz ahora está en forma
-        # escalonada reducida, si el valor en la diagonal es 0 quiere decir
-        # que la fila es nula también.
-        if mat1[i][i] == 0:
-            indet_idx = i
-            if res[i] == 1:
-                return None
-
-    # Si es un sistema indeterminado (hay filas nulas), fijamos los valores de
-    # las variables libres en 0. Como la matriz está en forma escalonada reducida,
-    # todas las filas reducirían a la ecuación x_h + x_(i_1) + x_(i_2) + ... + x_(i_m) = b_h,
-    # donde h es la fila y i_j es alguna secuencia de las variables libres. Como todas
-    # las variables libres son 0, entonces la ecuación siempre se reduce x_h = b_h.
-
-
+    # Si el sistema es incompatible, no existe una solución.
+    # Si es indeterminado, gauss fija las variables libres en 0 y devuelve
+    # una solución válida.
     return res
 
 # Desaplanar la representación vectorial de la solución a una matriz
@@ -166,12 +148,13 @@ def ask_user():
         l = input(f'Ingrese la fila {len(mat) + 1} del tablero (separada por espacios): ')
         try:
             row: list[int] = []
-            for v in l.split(' '):
+            for v in l.split():
                 i = int(v)
                 if i not in [0, 1]: raise ValueError
                 row.append(i)
             if len(row) != n:
                 print(f'Debe ingresar {n} números, ingresó {len(row)}')
+                continue
             mat.append(row)
         except ValueError:
             print('Debe ingresar números de 0 a 1')
